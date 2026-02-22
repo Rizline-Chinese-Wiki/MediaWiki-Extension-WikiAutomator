@@ -1,0 +1,88 @@
+{
+	"name": "WikiAutomator",
+	"version": "1.2",
+	"author": "Kajiekazz and Rizline-Chinese-Wiki Team",
+	"url": "https://github.com/Rizline-Chinese-Wiki/MediaWiki-Extension-WikiAutomator",
+	"description": "Visual automation tool for MediaWiki",
+	"type": "other",
+	"requires": {
+		"MediaWiki": ">= 1.39.0"
+	},
+	"AvailableRights": [
+		"manage-automation"
+	],
+	"GroupPermissions": {
+		"sysop": {
+			"manage-automation": true
+		},
+		"bot": {
+			"manage-automation": true
+		},
+		"emailconfirmed": {
+			"manage-automation": true
+		}
+	},
+	"SpecialPages": {
+		"WikiAutomator": "WikiAutomator\\SpecialWikiAutomator"
+	},
+	"MessagesDirs": {
+		"WikiAutomator": [
+			"i18n"
+		]
+	},
+	"ExtensionMessagesFiles": {
+		"WikiAutomatorAlias": "WikiAutomator.alias.php"
+	},
+	"ResourceModules": {
+		"ext.wikiautomator": {
+			"scripts": "ext.wikiautomator.js",
+			"styles": "ext.wikiautomator.css",
+			"dependencies": [
+				"mediawiki.api",
+				"mediawiki.ui.button",
+				"mediawiki.ui.input"
+			]
+		}
+	},
+	"ResourceFileModulePaths": {
+		"localBasePath": "resources",
+		"remoteExtPath": "WikiAutomator/resources"
+	},
+	"Attributes": {
+		"Monolog": {
+			"Channels": {
+				"WikiAutomator": {
+					"description": "WikiAutomator debug logs"
+				}
+			}
+		}
+	},
+	"ConfigRegistry": {
+		"WikiAutomator": "GlobalVarConfig::newInstance"
+	},
+	"config": {
+		"WikiAutomatorForceSync": {
+			"value": false,
+			"description": "If true, run tasks immediately (synchronously) instead of pushing to job queue. For debugging only."
+		},
+		"WikiAutomatorTimezone": {
+			"value": "Asia/Shanghai",
+			"description": "Timezone for scheduled tasks. Default is Asia/Shanghai (Beijing time)."
+		}
+	},
+	"Hooks": {
+		"PageSaveComplete": "WikiAutomator\\Hooks::onPageSaveComplete",
+		"LoadExtensionSchemaUpdates": "WikiAutomator\\Hooks::onLoadExtensionSchemaUpdates",
+		"CategoryAfterPageAdded": "WikiAutomator\\Hooks::onCategoryAfterPageAdded",
+		"CategoryAfterPageRemoved": "WikiAutomator\\Hooks::onCategoryAfterPageRemoved",
+		"ListDefinedTags": "WikiAutomator\\Hooks::onListDefinedTags",
+		"ChangeTagsListActive": "WikiAutomator\\Hooks::onChangeTagsListActive"
+	},
+	"JobClasses": {
+		"WikiAutomatorJob": "WikiAutomator\\AutomationJob"
+	},
+	"AutoloadNamespaces": {
+		"WikiAutomator\\": "src/"
+	},
+	"manifest_version": 2
+}

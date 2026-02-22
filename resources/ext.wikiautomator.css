@@ -1,0 +1,233 @@
+.wa-step-row {
+	border: 1px solid #c8ccd1;
+	border-radius: 4px;
+	margin-bottom: 15px;
+	background: transparent;
+}
+
+.wa-step-header {
+	background: rgba(128, 128, 128, 0.1);
+	padding: 10px;
+	font-weight: bold;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	border-bottom: 1px solid #c8ccd1;
+}
+
+.wa-step-content {
+	padding: 15px;
+}
+
+.wa-input-group {
+	margin-bottom: 10px;
+}
+
+.wa-input-group label {
+	display: block;
+	font-weight: bold;
+	margin-bottom: 5px;
+}
+
+.wa-empty-state {
+	padding: 20px;
+	text-align: center;
+	color: #72777d;
+	border: 2px dashed #c8ccd1;
+	margin-bottom: 15px;
+}
+
+#wa-add-step {
+	margin-top: 10px;
+}
+
+/* Fix button visibility in task list */
+.wikitable .mw-ui-button.mw-ui-quiet {
+	opacity: 1 !important;
+	visibility: visible !important;
+	background-color: transparent !important;
+}
+
+.wikitable .mw-ui-button.mw-ui-quiet.mw-ui-progressive {
+	color: #36c !important;
+	border: 1px solid #36c !important;
+	background-color: rgba(51, 102, 204, 0.1) !important;
+}
+
+.wikitable .mw-ui-button.mw-ui-quiet.mw-ui-destructive {
+	color: #d33 !important;
+	border: 1px solid #d33 !important;
+	background-color: rgba(221, 51, 51, 0.1) !important;
+}
+
+.wikitable .mw-ui-button.mw-ui-quiet:hover {
+	background-color: rgba(128, 128, 128, 0.2) !important;
+}
+
+/* 暂停/启用按钮 */
+.wikitable form .mw-ui-button.mw-ui-quiet:not(.mw-ui-progressive):not(.mw-ui-destructive) {
+	color: #72777d !important;
+	border: 1px solid #72777d !important;
+	background-color: rgba(128, 128, 128, 0.1) !important;
+}
+
+/* Fix delete button visibility in step rows */
+.wa-step-header .mw-ui-button.mw-ui-quiet {
+	opacity: 1 !important;
+	visibility: visible !important;
+	color: #d33 !important;
+	border: 1px solid #d33 !important;
+	background: transparent;
+}
+
+.wa-step-header .mw-ui-button.mw-ui-quiet:hover {
+	background-color: rgba(221, 51, 51, 0.1);
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+	.wa-step-row {
+		border-color: #72777d;
+	}
+
+	.wa-step-header {
+		background: rgba(255, 255, 255, 0.05);
+		border-color: #72777d;
+	}
+
+	.wa-empty-state {
+		color: #a2a9b1;
+		border-color: #72777d;
+	}
+
+	.wa-input-group .mw-ui-input {
+		background-color: #1e1e1e;
+		color: #e0e0e0;
+		border-color: #72777d;
+	}
+}
+
+/* Support for MediaWiki skin dark mode classes */
+.skin-citizen-dark .wa-step-row,
+.skin-vector-dark .wa-step-row,
+.client-dark-mode .wa-step-row {
+	border-color: #72777d;
+}
+
+.skin-citizen-dark .wa-step-header,
+.skin-vector-dark .wa-step-header,
+.client-dark-mode .wa-step-header {
+	background: rgba(255, 255, 255, 0.05);
+	border-color: #72777d;
+}
+
+.skin-citizen-dark .wa-empty-state,
+.skin-vector-dark .wa-empty-state,
+.client-dark-mode .wa-empty-state {
+	color: #a2a9b1;
+	border-color: #72777d;
+}
+
+.skin-citizen-dark .wa-input-group .mw-ui-input,
+.skin-vector-dark .wa-input-group .mw-ui-input,
+.client-dark-mode .wa-input-group .mw-ui-input {
+	background-color: #1e1e1e;
+	color: #e0e0e0;
+	border-color: #72777d;
+}
+
+/* Preview table */
+.wa-preview-table {
+	border-collapse: collapse;
+}
+
+.wa-preview-table td,
+.wa-preview-table th {
+	vertical-align: top;
+}
+
+.wa-preview-match {
+	background-color: #fff3a5;
+	padding: 1px 2px;
+	border-radius: 2px;
+	font-weight: bold;
+}
+
+.wa-preview-context {
+	font-family: monospace;
+	font-size: 0.9em;
+	white-space: pre-wrap;
+	word-break: break-all;
+	max-width: 400px;
+}
+
+/* Warning box */
+.wa-warning {
+	background-color: #fef6e7;
+	border: 1px solid #fc3;
+	border-radius: 4px;
+	padding: 10px 15px;
+	margin: 10px 0;
+	color: #705000;
+}
+
+/* Search filters area */
+.wa-search-filters {
+	border-left: 3px solid #36c;
+	padding-left: 12px;
+	margin: 8px 0;
+}
+
+/* Namespace checkboxes */
+.wa-ns-checkboxes {
+	max-height: 150px;
+	overflow-y: auto;
+	border: 1px solid #c8ccd1;
+	border-radius: 3px;
+	padding: 6px 8px;
+	margin-top: 4px;
+}
+
+.wa-ns-checkboxes label {
+	font-weight: normal !important;
+	cursor: pointer;
+}
+
+/* Regex flags inline checkboxes */
+.wa-regex-flags label {
+	font-weight: normal !important;
+	cursor: pointer;
+}
+
+.wa-regex-flags input[type="checkbox"] {
+	margin-right: 4px;
+}
+
+/* Dark mode for preview and warnings */
+@media (prefers-color-scheme: dark) {
+	.wa-preview-match {
+		background-color: #665d1e;
+		color: #f8f9fa;
+	}
+
+	.wa-warning {
+		background-color: #332b00;
+		border-color: #665d1e;
+		color: #e0d6a8;
+	}
+}
+
+.skin-citizen-dark .wa-preview-match,
+.skin-vector-dark .wa-preview-match,
+.client-dark-mode .wa-preview-match {
+	background-color: #665d1e;
+	color: #f8f9fa;
+}
+
+.skin-citizen-dark .wa-warning,
+.skin-vector-dark .wa-warning,
+.client-dark-mode .wa-warning {
+	background-color: #332b00;
+	border-color: #665d1e;
+	color: #e0d6a8;
+}
