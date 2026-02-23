@@ -132,20 +132,41 @@ class AutomationJob extends Job {
 			if ( $type === 'step_execution' ) {
 				$actionType = $action['action'] ?? 'append';
 				$regexFlags = $action['regex_flags'] ?? [];
-				$targetRule = $action['target'] ?? '';
+				$stepMatchMode = $action['match_mode'] ?? $matchMode;
+
+				// Determine target type (new format vs legacy)
+				$targetType = $action['target_type'] ?? null;
+				if ( $targetType === null ) {
+					// Legacy format migration
+					$oldTarget = $action['target'] ?? '';
+					if ( $oldTarget === '__search__' ) {
+						$targetType = 'search';
+					} elseif ( $oldTarget === '' || $oldTarget === '{{PAGENAME}}' ) {
+						$targetType = 'trigger';
+					} else {
+						$targetType = 'specific';
+					}
+				}
 
 				// Determine target pages
 				$targets = [];
-				if ( $targetRule === '__search__' ) {
+				if ( $targetType === 'search' ) {
 					// Dynamic search mode: find pages via database query
 					$searchFilters = $action['search_filters'] ?? [];
-					$searchValue = $action['value'] ?? '';
 					$searchStr = '';
-					if ( is_array( $searchValue ) && isset( $searchValue['search'] ) ) {
-						$searchStr = $searchValue['search'];
+					// For replace, search term comes from value.search; for others, from search_term field
+					if ( $actionType === 'replace' ) {
+						$searchValue = $action['value'] ?? '';
+						if ( is_array( $searchValue ) && isset( $searchValue['search'] ) ) {
+							$searchStr = $searchValue['search'];
+						} elseif ( is_string( $searchValue ) ) {
+							$searchStr = $searchValue;
+						}
+					} else {
+						$searchStr = $action['search_term'] ?? '';
 					}
 					if ( $searchStr !== '' ) {
-						$effectiveMode = $matchMode;
+						$effectiveMode = $stepMatchMode;
 						if ( $effectiveMode === 'auto' ) {
 							if ( $useRegex ) {
 								$effectiveMode = 'regex';
@@ -166,11 +187,15 @@ class AutomationJob extends Job {
 						);
 						$logger->info( "Task $taskId: Search found " . count( $targets ) . " target pages" );
 					}
-				} else {
-					$resolved = $this->resolveTitle( $triggerTitle, $targetRule );
+				} elseif ( $targetType === 'specific' ) {
+					$targetPage = $action['target_page'] ?? $action['target'] ?? '';
+					$resolved = $this->resolveTitle( $triggerTitle, $targetPage );
 					if ( $resolved ) {
 						$targets = [ $resolved ];
 					}
+				} else {
+					// trigger mode: use the trigger page itself
+					$targets = [ $triggerTitle ];
 				}
 
 				// Filter targets by selected pages (from preview selective execution)
@@ -190,18 +215,18 @@ class AutomationJob extends Job {
 				foreach ( $targets as $target ) {
 					$logger->info( "Task $taskId: Processing target '" . $target->getPrefixedText() . "'" );
 					try {
-						$result = $this->performEdit( $target, $actionType, $action['value'] ?? '', $matchMode, $useRegex, $regexFlags );
+						$result = $this->performEdit( $target, $actionType, $action['value'] ?? '', $stepMatchMode, $useRegex, $regexFlags );
 						$editedPages[] = [
 							'page' => $target->getPrefixedText(),
 							'action' => $this->getActionDescription( $actionType ),
-							'status' => $result['changed'] ? '成功' : '无变更',
+							'status' => $result['changed'] ? 'success' : 'no_change',
 							'match_count' => $result['match_count']
 						];
 					} catch ( \Throwable $e ) {
 						$editedPages[] = [
 							'page' => $target->getPrefixedText(),
 							'action' => $this->getActionDescription( $actionType ),
-							'status' => '失败: ' . $e->getMessage()
+							'status' => 'failed: ' . $e->getMessage()
 						];
 						$logger->error( "Task $taskId: performEdit threw exception: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine() );
 					}
@@ -225,7 +250,7 @@ class AutomationJob extends Job {
 							}
 						}
 						// Also search for additional title matches if using search mode
-						if ( $targetRule === '__search__' ) {
+						if ( $targetType === 'search' ) {
 							$searchFilters = $action['search_filters'] ?? [];
 							$titleMatches = Search::doTitleSearchQuery(
 								$searchStr, 'literal',
@@ -282,18 +307,18 @@ class AutomationJob extends Job {
 									$logger->warning( "Task $taskId: Cannot move " . $candidate->getPrefixedText() . ": " . $moveStatus->getMessage()->text() );
 									$editedPages[] = [
 										'page' => $candidate->getPrefixedText(),
-										'action' => '重命名',
-										'status' => '不可移动',
+										'action' => wfMessage( 'wikiautomator-action-rename' )->text(),
+										'status' => 'not_movable',
 										'match_count' => 0
 									];
 									continue;
 								}
-								$reason = $this->buildEditSummary( 'rename', $searchValue, $matchMode );
+								$reason = $this->buildEditSummary( 'replace', $searchValue, $stepMatchMode );
 								$status = $movePage->move( $moveUser, $reason, true );
 								$editedPages[] = [
 									'page' => $candidate->getPrefixedText(),
-									'action' => '重命名 → ' . $newTitle->getPrefixedText(),
-									'status' => $status->isOK() ? '成功' : '失败',
+									'action' => wfMessage( 'wikiautomator-action-rename-to', $newTitle->getPrefixedText() )->text(),
+									'status' => $status->isOK() ? 'success' : 'failed',
 									'match_count' => 1
 								];
 								if ( $status->isOK() ) {
@@ -302,8 +327,8 @@ class AutomationJob extends Job {
 							} catch ( \Throwable $e ) {
 								$editedPages[] = [
 									'page' => $candidate->getPrefixedText(),
-									'action' => '重命名',
-									'status' => '失败: ' . $e->getMessage(),
+									'action' => wfMessage( 'wikiautomator-action-rename' )->text(),
+									'status' => 'failed: ' . $e->getMessage(),
 									'match_count' => 0
 								];
 								$logger->error( "Task $taskId: Move failed: " . $e->getMessage() );
@@ -312,8 +337,8 @@ class AutomationJob extends Job {
 					}
 				}
 
-				if ( empty( $targets ) && $targetRule !== '__search__' ) {
-					$logger->warning( "Task $taskId: Failed to resolve target '$targetRule'" );
+				if ( empty( $targets ) && $targetType === 'specific' ) {
+					$logger->warning( "Task $taskId: Failed to resolve target '" . ($action['target_page'] ?? '') . "'" );
 				}
 				continue;
 			}
@@ -338,7 +363,7 @@ class AutomationJob extends Job {
 			$editedPages[] = [
 				'page' => $targetTitle->getPrefixedText(),
 				'action' => $this->getActionDescription( $type ),
-				'status' => $result['changed'] ? '成功' : '无变更',
+				'status' => $result['changed'] ? 'success' : 'no_change',
 				'match_count' => $result['match_count']
 			];
 		}
@@ -360,11 +385,10 @@ class AutomationJob extends Job {
 	 */
 	private function getActionDescription( $action ) {
 		switch ( $action ) {
-			case 'overwrite': return '覆写内容';
-			case 'append': return '追加内容';
-			case 'prepend': return '前置内容';
-			case 'replace': return '替换文本';
-			case 'rename': return '重命名页面';
+			case 'overwrite': return wfMessage( 'wikiautomator-action-overwrite' )->text();
+			case 'append': return wfMessage( 'wikiautomator-action-append' )->text();
+			case 'prepend': return wfMessage( 'wikiautomator-action-prepend' )->text();
+			case 'replace': return wfMessage( 'wikiautomator-action-replace' )->text();
 			default: return $action;
 		}
 	}
@@ -397,14 +421,14 @@ class AutomationJob extends Job {
 				$results[] = [
 					'page' => $targetTitle->getPrefixedText(),
 					'action' => $this->getActionDescription( $actionType ),
-					'status' => $result['changed'] ? '成功' : '无变更',
+					'status' => $result['changed'] ? 'success' : 'no_change',
 					'match_count' => $result['match_count']
 				];
 			} catch ( \Throwable $e ) {
 				$results[] = [
 					'page' => $targetTitle->getPrefixedText(),
 					'action' => $this->getActionDescription( $actionType ),
-					'status' => '失败: ' . $e->getMessage()
+					'status' => 'failed: ' . $e->getMessage()
 				];
 			}
 		}
@@ -421,17 +445,17 @@ class AutomationJob extends Job {
 		$actionDesc = '';
 		switch ( $type ) {
 			case 'overwrite':
-				$actionDesc = '覆写内容';
+				$actionDesc = wfMessage( 'wikiautomator-summary-overwrite' )->text();
 				break;
 			case 'append':
 				$preview = mb_substr( $value, 0, 30 );
 				if ( mb_strlen( $value ) > 30 ) $preview .= '...';
-				$actionDesc = '追加内容: "' . $preview . '"';
+				$actionDesc = wfMessage( 'wikiautomator-summary-append', $preview )->text();
 				break;
 			case 'prepend':
 				$preview = mb_substr( $value, 0, 30 );
 				if ( mb_strlen( $value ) > 30 ) $preview .= '...';
-				$actionDesc = '前置内容: "' . $preview . '"';
+				$actionDesc = wfMessage( 'wikiautomator-summary-prepend', $preview )->text();
 				break;
 			case 'replace':
 				$search = '';
@@ -450,20 +474,11 @@ class AutomationJob extends Job {
 				if ( mb_strlen( $replace ) > 20 ) $replacePreview .= '...';
 				$modeNote = '';
 				if ( $matchMode === 'regex' ) {
-					$modeNote = ' (正则)';
+					$modeNote = wfMessage( 'wikiautomator-summary-mode-regex' )->text();
 				} elseif ( $matchMode === 'wildcard' ) {
-					$modeNote = ' (通配符)';
+					$modeNote = wfMessage( 'wikiautomator-summary-mode-wildcard' )->text();
 				}
-				$actionDesc = "替换{$modeNote}: \"{$searchPreview}\" → \"{$replacePreview}\"";
-				break;
-			case 'rename':
-				$search = '';
-				$replace = '';
-				if ( is_array($value) && isset($value['search'], $value['replace']) ) {
-					$search = $value['search'];
-					$replace = $value['replace'];
-				}
-				$actionDesc = "重命名: \"{$search}\" → \"{$replace}\"";
+				$actionDesc = wfMessage( 'wikiautomator-summary-replace', $modeNote, $searchPreview, $replacePreview )->text();
 				break;
 			default:
 				$actionDesc = $type;
@@ -482,7 +497,7 @@ class AutomationJob extends Job {
 	/**
 	 * Core Edit Logic: Load -> Modify -> Save
 	 * @param Title $targetTitle Target page
-	 * @param string $type Action type (overwrite/append/prepend/replace/rename)
+	 * @param string $type Action type (overwrite/append/prepend/replace)
 	 * @param mixed $value Action value
 	 * @param string $matchMode Match mode: auto/literal/wildcard/regex
 	 * @param bool $useRegex Legacy regex flag (used when matchMode=auto)
@@ -601,58 +616,6 @@ class AutomationJob extends Job {
 						}
 					}
 				}
-			}
-			elseif ( $type === 'rename' ) {
-				// Page title replacement (rename)
-				$search = '';
-				$replace = '';
-				$createRedirect = true;
-
-				if ( is_array($value) && isset($value['search'], $value['replace']) ) {
-					$search = $value['search'];
-					$replace = $value['replace'];
-					$createRedirect = $value['create_redirect'] ?? true;
-				}
-
-				if ( $search !== '' && $targetTitle->exists() ) {
-					$oldTitleText = $targetTitle->getText();
-					$newTitleText = str_replace( $search, $replace, $oldTitleText );
-
-					if ( $newTitleText !== $oldTitleText ) {
-						$newTitle = Title::makeTitleSafe( $targetTitle->getNamespace(), $newTitleText );
-						if ( $newTitle ) {
-							$matchCount = 1;
-							$ownerId = $this->params['owner_id'] ?? 0;
-							$userFactory = $services->getUserFactory();
-							$editUser = null;
-							if ( $ownerId > 0 ) {
-								$editUser = $userFactory->newFromId( $ownerId );
-								if ( !$editUser || !$editUser->getId() ) {
-									$editUser = null;
-								}
-							}
-							if ( !$editUser ) {
-								$editUser = $userFactory->newSystemUser( 'WikiAutomatorBot', [ 'steal' => true ] );
-							}
-
-							if ( $editUser ) {
-								$movePage = $services->getMovePageFactory()->newMovePage( $targetTitle, $newTitle );
-								$reason = $this->buildEditSummary( $type, $value, $matchMode );
-								$status = $movePage->move( $editUser, $reason, $createRedirect );
-								if ( $status->isOK() ) {
-									$logger->info( "Task {$this->params['task_id']}: Renamed " . $targetTitle->getPrefixedText() . " to " . $newTitle->getPrefixedText() );
-									return [ 'changed' => true, 'match_count' => $matchCount ];
-								} else {
-									$logger->error( "Task {$this->params['task_id']}: Rename failed: " . $status->getMessage()->text() );
-									return [ 'changed' => false, 'match_count' => $matchCount ];
-								}
-							}
-						} else {
-							$logger->error( "Task {$this->params['task_id']}: Invalid new title: $newTitleText" );
-						}
-					}
-				}
-				return [ 'changed' => false, 'match_count' => 0 ];
 			}
 
 			$logger->info( "Task {$this->params['task_id']}: contentChanged = " . ($contentChanged ? 'true' : 'false') );
@@ -805,14 +768,17 @@ class AutomationJob extends Job {
 			if ( !empty( $regexFlags['U'] ) ) $flags .= 'U';
 			$pattern = '/' . str_replace( '/', '\/', $pattern ) . '/' . $flags;
 		} else {
-			// User provided delimiters: ensure 'u' flag is present
+			// User provided delimiters: validate flags and ensure 'u' is present
 			$delimiter = $pattern[0];
 			$lastDelimPos = strrpos( $pattern, $delimiter, 1 );
 			if ( $lastDelimPos !== false ) {
 				$existingFlags = substr( $pattern, $lastDelimPos + 1 );
-				if ( strpos( $existingFlags, 'u' ) === false ) {
-					$pattern .= 'u';
+				// Strip invalid flags, keep only valid PCRE modifiers
+				$validFlags = preg_replace( '/[^imsxuUADSX]/', '', $existingFlags );
+				if ( strpos( $validFlags, 'u' ) === false ) {
+					$validFlags .= 'u';
 				}
+				$pattern = substr( $pattern, 0, $lastDelimPos + 1 ) . $validFlags;
 			}
 		}
 		return $pattern;
@@ -898,8 +864,8 @@ class AutomationJob extends Job {
 			$totalMatches = 0;
 			$hasFailure = false;
 			foreach ( $editedPages as $p ) {
-				if ( ( $p['status'] ?? '' ) === '成功' ) $pagesAffected++;
-				if ( strpos( $p['status'] ?? '', '失败' ) !== false ) $hasFailure = true;
+				if ( ( $p['status'] ?? '' ) === 'success' ) $pagesAffected++;
+				if ( strpos( $p['status'] ?? '', 'failed' ) === 0 ) $hasFailure = true;
 				$totalMatches += $p['match_count'] ?? 0;
 			}
 
@@ -963,21 +929,34 @@ class AutomationJob extends Job {
 			$from = new \MailAddress( $GLOBALS['wgPasswordSender'], $siteName );
 
 			// Build detailed subject (sanitize to prevent header injection)
-			$subject = str_replace( [ "\r", "\n" ], ' ', "[{$siteName}] WikiAutomator 任务执行报告 - Task #{$taskId}" );
+			$subject = str_replace( [ "
+", "
+" ], ' ', wfMessage( 'wikiautomator-email-subject', $siteName, $taskId )->text() );
 
 			// Build detailed body
-			$body = "您好 {$sanitizedUserName}，\n\n";
-			$body .= "您在 {$siteName} 上的 WikiAutomator 任务已执行完成。\n\n";
-			$body .= "========== 任务信息 ==========\n";
-			$body .= "任务 ID: #{$taskId}\n";
+			$body = wfMessage( 'wikiautomator-email-greeting', $sanitizedUserName )->text() . "
+
+";
+			$body .= wfMessage( 'wikiautomator-email-intro', $siteName )->text() . "
+
+";
+			$body .= "========== " . wfMessage( 'wikiautomator-email-task-info' )->text() . " ==========
+";
+			$body .= wfMessage( 'wikiautomator-email-task-id', $taskId )->text() . "
+";
 			if ( $taskName ) {
-				$body .= "任务名称: {$taskName}\n";
+				$body .= wfMessage( 'wikiautomator-email-task-name', $taskName )->text() . "
+";
 			}
-			$body .= "触发页面: {$triggerTitle}\n";
-			$body .= "执行时间: " . date('Y-m-d H:i:s') . "\n";
+			$body .= wfMessage( 'wikiautomator-email-trigger-page', $triggerTitle )->text() . "
+";
+			$body .= wfMessage( 'wikiautomator-email-exec-time', date('Y-m-d H:i:s') )->text() . "
+";
 
 			if ( !empty($editedPages) ) {
-				$body .= "\n========== 修改的页面 ==========\n";
+				$body .= "
+========== " . wfMessage( 'wikiautomator-email-edited-pages' )->text() . " ==========
+";
 				$totalMatches = 0;
 				foreach ( $editedPages as $pageInfo ) {
 					// Sanitize page info to prevent any injection
@@ -987,31 +966,41 @@ class AutomationJob extends Job {
 					$pageMatches = $pageInfo['match_count'] ?? 0;
 					$totalMatches += $pageMatches;
 					$body .= "- {$pageName}\n";
-					$body .= "  操作: {$action}\n";
-					$body .= "  状态: {$status}\n";
+					$body .= "  " . wfMessage( 'wikiautomator-email-page-action', $action )->text() . "
+";
+					$body .= "  " . wfMessage( 'wikiautomator-email-page-status', $status )->text() . "
+";
 					if ( $pageMatches > 0 ) {
-						$body .= "  匹配数: {$pageMatches}\n";
+						$body .= "  " . wfMessage( 'wikiautomator-email-page-matches', $pageMatches )->text() . "
+";
 					}
 					if ( $pageName && $baseUrl ) {
 						$pageUrl = $baseUrl . '/index.php?title=' . urlencode(str_replace(' ', '_', $pageName));
-						$body .= "  链接: {$pageUrl}\n";
+						$body .= "  " . wfMessage( 'wikiautomator-email-page-link', $pageUrl )->text() . "
+";
 					}
 				}
-				$body .= "\n总匹配数: {$totalMatches}\n";
+				$body .= "
+" . wfMessage( 'wikiautomator-email-total-matches', $totalMatches )->text() . "
+";
 			}
 
-			$body .= "\n========== 相关链接 ==========\n";
+			$body .= "
+========== " . wfMessage( 'wikiautomator-email-links' )->text() . " ==========
+";
 			if ( $baseUrl ) {
-				$body .= "任务管理: {$baseUrl}/index.php?title=Special:WikiAutomator\n";
+				$body .= wfMessage( 'wikiautomator-email-task-management', "{$baseUrl}/index.php?title=Special:WikiAutomator" )->text() . "
+";
 				if ( $triggerTitle ) {
 					$triggerUrl = $baseUrl . '/index.php?title=' . urlencode(str_replace(' ', '_', $triggerTitle));
-					$body .= "触发页面: {$triggerUrl}\n";
+					$body .= wfMessage( 'wikiautomator-email-trigger-page', $triggerUrl )->text() . "
+";
 				}
 			}
 
 			$body .= "\n--\n";
-			$body .= "此邮件由 {$siteName} 的 WikiAutomator 扩展自动发送。\n";
-			$body .= "如需修改任务设置，请访问 Special:WikiAutomator 页面。\n";
+			$body .= wfMessage( 'wikiautomator-email-footer', $siteName )->text() . "
+";
 
 			$status = \UserMailer::send( $to, $from, $subject, $body );
 			if ( $status->isOK() ) {

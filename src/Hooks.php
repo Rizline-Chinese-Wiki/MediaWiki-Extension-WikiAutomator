@@ -81,8 +81,26 @@ class Hooks {
 	public static function onPageSaveComplete( $wikiPage, $user, $summary, $flags, $revisionRecord, $editResult ) {
 		$logger = \MediaWiki\Logger\LoggerFactory::getInstance( 'WikiAutomator' );
 
+		// Prevent recursive triggering: skip if this edit was made by WikiAutomator
 		if ( strpos( $summary, 'WikiAutomator Action' ) !== false ) {
 			return;
+		}
+		// Also check change tag on the revision
+		if ( $revisionRecord ) {
+			$services = MediaWikiServices::getInstance();
+			$dbr = $services->getDBLoadBalancer()->getConnection( \DB_REPLICA );
+			$tags = $dbr->selectFieldValues( 'change_tag', 'ct_tag_id',
+				[ 'ct_rev_id' => $revisionRecord->getId() ], __METHOD__ );
+			if ( !empty( $tags ) ) {
+				$tagRows = $dbr->select( 'change_tag_def', 'ctd_name',
+					[ 'ctd_id' => $tags ], __METHOD__ );
+				foreach ( $tagRows as $tr ) {
+					if ( $tr->ctd_name === self::CHANGE_TAG ) {
+						$logger->debug( 'Skipping WikiAutomator-triggered edit to prevent recursion' );
+						return;
+					}
+				}
+			}
 		}
 
 		$services = MediaWikiServices::getInstance();

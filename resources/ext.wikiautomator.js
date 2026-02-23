@@ -6,7 +6,6 @@
 	 */
 	var WikiAutomator = {
 		steps: [],
-		pollInterval: null,
 
 		init: function () {
 			// Load initial data
@@ -20,46 +19,6 @@
 
 			// Initialize trigger type visibility
 			this.initTriggerTypeVisibility();
-
-			// Watch match mode changes to toggle regex flags visibility
-			this.initMatchModeWatch();
-		},
-
-		/**
-		 * Clean up resources when leaving the page
-		 */
-		destroy: function () {
-			if ( this.pollInterval ) {
-				clearInterval( this.pollInterval );
-				this.pollInterval = null;
-			}
-			if ( this.matchModePollInterval ) {
-				clearInterval( this.matchModePollInterval );
-				this.matchModePollInterval = null;
-			}
-		},
-
-		/**
-		 * Watch match mode select to toggle regex flags visibility
-		 */
-		initMatchModeWatch: function () {
-			var self = this;
-			var $matchModeSelect = $( 'select[name="wpMatchMode"]' );
-			if ( !$matchModeSelect.length ) return;
-
-			var currentMode = $matchModeSelect.val();
-			this.matchModePollInterval = setInterval( function() {
-				var newMode = $matchModeSelect.val();
-				if ( newMode !== currentMode ) {
-					currentMode = newMode;
-					// Toggle regex flags visibility
-					if ( newMode === 'regex' ) {
-						$( '.wa-regex-flags' ).show();
-					} else {
-						$( '.wa-regex-flags' ).hide();
-					}
-				}
-			}, 200 );
 		},
 
 		/**
@@ -78,38 +37,27 @@
 			// Store current value
 			var currentValue = $triggerSelect.val();
 
-			// Initial update - run multiple times to ensure it works after OOUI renders
+			// Initial update, with a delayed retry for OOUI rendering
 			self.updateFieldVisibility( currentValue );
-			setTimeout( function() {
-				self.updateFieldVisibility( $triggerSelect.val() );
-			}, 100 );
-			setTimeout( function() {
-				self.updateFieldVisibility( $triggerSelect.val() );
-			}, 300 );
 			setTimeout( function() {
 				self.updateFieldVisibility( $triggerSelect.val() );
 			}, 500 );
 
-			// Poll for changes since OOUI doesn't fire native change events
-			// Store reference so we can clear it later
-			this.pollInterval = setInterval( function() {
+			// Listen for changes on the trigger type select
+			$triggerSelect.on( 'change', function() {
 				var newValue = $triggerSelect.val();
 				if ( newValue !== currentValue ) {
 					currentValue = newValue;
 					self.updateFieldVisibility( newValue );
 				}
-			}, 200 );
-
-			// Clean up interval when navigating away
-			$( window ).on( 'beforeunload.wikiautomator', function() {
-				self.destroy();
 			} );
 
-			// Also clean up on AJAX navigation (for single-page apps)
-			mw.hook( 'wikipage.content' ).add( function() {
-				// Only destroy if we're navigating away from this page
-				if ( !$( '#wa-steps-container' ).length ) {
-					self.destroy();
+			// Also listen on the OOUI widget container for delegated changes
+			$triggerSelect.closest( '.oo-ui-widget' ).on( 'change', 'select', function() {
+				var newValue = $triggerSelect.val();
+				if ( newValue !== currentValue ) {
+					currentValue = newValue;
+					self.updateFieldVisibility( newValue );
 				}
 			} );
 		},
@@ -128,9 +76,14 @@
 			$categoryFields.hide();
 			$cronFields.hide();
 			$scheduledFields.hide();
+			$pageConditionFields.hide();
 
 			// Show relevant fields based on trigger type
 			switch ( triggerType ) {
+				case 'manual':
+					// No trigger conditions needed
+					break;
+
 				case 'page_save':
 				case 'page_create':
 					$pageConditionFields.show();
@@ -138,24 +91,32 @@
 
 				case 'category_change':
 					$categoryFields.show();
-					$pageConditionFields.show();
+					// Show condition title but not namespace
+					$( '.wa-page-condition' ).each( function() {
+						var $field = $( this ).filter( '.oo-ui-fieldLayout' ).add( $( this ).closest( '.oo-ui-fieldLayout' ) );
+						// Only show ConditionTitle, not ConditionNS
+						var isNsField = $( this ).find( 'input[name="wpConditionNS[]"]' ).length > 0 ||
+							$( this ).text().indexOf( mw.msg( 'wikiautomator-condition-ns-label' ) ) !== -1;
+						if ( !isNsField ) {
+							$field.show();
+						}
+					} );
 					break;
 
 				case 'cron_custom':
 					$cronFields.show();
-					$pageConditionFields.hide();
 					break;
 
 				case 'scheduled':
 					$scheduledFields.show();
-					$pageConditionFields.hide();
 					break;
 			}
 		},
 
 		addStep: function () {
 			this.steps.push( {
-				target: '',
+				target_type: 'trigger',
+				target_page: '',
 				action: 'append',
 				value: ''
 			} );
@@ -163,12 +124,7 @@
 		},
 
 		removeStep: function ( index ) {
-			// Use mw.msg for i18n, fallback to Chinese if message not defined
-			var confirmMsg = mw.msg( 'wikiautomator-confirm-delete-step' );
-			if ( confirmMsg === '[wikiautomator-confirm-delete-step]' ) {
-				confirmMsg = '确定要删除这个步骤吗？';
-			}
-			if ( confirm( confirmMsg ) ) {
+			if ( confirm( mw.msg( 'wikiautomator-confirm-delete-step' ) ) ) {
 				this.steps.splice( index, 1 );
 				this.render();
 			}
@@ -185,40 +141,64 @@
 			$container.empty();
 
 			if ( this.steps.length === 0 ) {
-				// Use mw.msg for i18n, fallback to Chinese if message not defined
-				var emptyMsg = mw.msg( 'wikiautomator-empty-steps' );
-				if ( emptyMsg === '[wikiautomator-empty-steps]' ) {
-					emptyMsg = '暂无执行步骤。点击"添加步骤"开始配置。';
-				}
-				$container.html( '<div class="wa-empty-state">' + mw.html.escape( emptyMsg ) + '</div>' );
+				$container.html( '<div class="wa-empty-state">' + mw.html.escape( mw.msg( 'wikiautomator-empty-steps' ) ) + '</div>' );
 			} else {
 				this.steps.forEach( function ( step, index ) {
 					var $row = $( '<div>' ).addClass( 'wa-step-row' );
 
-					var $header = $( '<div>' ).addClass( 'wa-step-header' ).text( '步骤 ' + (index + 1) );
+					var $header = $( '<div>' ).addClass( 'wa-step-header' ).text( mw.msg( 'wikiautomator-step-header', index + 1 ) );
 					var $removeBtn = $( '<button>' )
 						.addClass( 'mw-ui-button mw-ui-quiet mw-ui-destructive mw-ui-small' )
-						.text( '删除' )
+						.text( mw.msg( 'wikiautomator-step-delete' ) )
 						.on( 'click', function(e) { e.preventDefault(); WikiAutomator.removeStep( index ); } );
 					$header.append( $removeBtn );
 
 					var $content = $( '<div>' ).addClass( 'wa-step-content' );
 
-					// Search target toggle for replace action
-					var useSearchTarget = step.target === '__search__';
+					// --- Target type dropdown ---
+					var targetType = step.target_type || ( step.target === '__search__' ? 'search' : ( step.target === '{{PAGENAME}}' || step.target === '' ? 'trigger' : 'specific' ) );
+					var $targetTypeGroup = this.createSelectGroup( mw.msg( 'wikiautomator-step-target-type' ), targetType, {
+						'trigger': mw.msg( 'wikiautomator-step-target-trigger' ),
+						'specific': mw.msg( 'wikiautomator-step-target-specific' ),
+						'search': mw.msg( 'wikiautomator-step-target-search' )
+					}, function(v) {
+						WikiAutomator.updateStep( index, 'target_type', v );
+						if ( v === 'specific' ) {
+							$targetGroup.show();
+							$filtersGroup.hide();
+							$searchWarning.hide();
+						} else if ( v === 'search' ) {
+							$targetGroup.hide();
+							$filtersGroup.show();
+							if ( !WikiAutomator.steps[index].search_filters ) {
+								WikiAutomator.updateStep( index, 'search_filters', { namespaces: [], category: '', prefix: '' } );
+							}
+							// Show warning if event trigger
+							var tt = $( '#wa-trigger-type select, select[name="wpTriggerType"]' ).val();
+							if ( tt === 'page_save' || tt === 'page_create' || tt === 'category_change' ) {
+								$searchWarning.show();
+							} else {
+								$searchWarning.hide();
+							}
+						} else {
+							$targetGroup.hide();
+							$filtersGroup.hide();
+							$searchWarning.hide();
+						}
+					} );
 
-					// Target Input (hidden when search mode is on)
-					var $targetGroup = this.createInputGroup( '目标页面', useSearchTarget ? '' : step.target, '例如: Page2 或 {{PAGENAME}}', function(v) { WikiAutomator.updateStep(index, 'target', v); } );
-					if ( useSearchTarget ) $targetGroup.hide();
+					// Target page input (for 'specific' mode)
+					var $targetGroup = this.createInputGroup( mw.msg( 'wikiautomator-step-target-page' ), step.target_page || step.target || '', mw.msg( 'wikiautomator-step-target-page-placeholder' ), function(v) { WikiAutomator.updateStep(index, 'target_page', v); } );
+					if ( targetType !== 'specific' ) $targetGroup.hide();
 
-					// Search target checkbox
-					var $searchToggle = $( '<div>' ).addClass( 'wa-input-group' );
-					var $searchCheck = $( '<input>' ).attr( 'type', 'checkbox' ).prop( 'checked', useSearchTarget );
-					$searchToggle.append(
-						$( '<label>' ).css( 'display', 'inline' ).append( $searchCheck, ' 搜索目标页面（按内容匹配）' )
-					);
+					// Search warning
+					var $searchWarning = $( '<div>' ).addClass( 'wa-warning' ).text( mw.msg( 'wikiautomator-step-search-warning' ) );
+					var triggerVal = $( '#wa-trigger-type select, select[name="wpTriggerType"]' ).val();
+					if ( targetType !== 'search' || ( triggerVal !== 'page_save' && triggerVal !== 'page_create' && triggerVal !== 'category_change' ) ) {
+						$searchWarning.hide();
+					}
 
-					// Search filters (shown when search mode is on)
+					// Search filters (for 'search' mode)
 					var filters = step.search_filters || {};
 					var $filtersGroup = $( '<div>' ).addClass( 'wa-search-filters' ).css( 'margin-left', '20px' );
 
@@ -226,8 +206,8 @@
 					var selectedNs = filters.namespaces || [];
 					var allNamespaces = mw.config.get( 'wgWikiAutomatorNamespaces' ) || [];
 					var $nsGroup = $( '<div>' ).addClass( 'wa-input-group' );
-					$nsGroup.append( $( '<label>' ).text( '命名空间' ) );
-					var $nsCheckboxes = $( '<div>' ).addClass( 'wa-ns-checkboxes' ).css( { display: 'flex', 'flex-wrap': 'wrap', gap: '4px 14px' } );
+					$nsGroup.append( $( '<label>' ).text( mw.msg( 'wikiautomator-step-search-ns-label' ) ) );
+					var $nsCheckboxes = $( '<div>' ).css( { display: 'flex', 'flex-wrap': 'wrap', gap: '4px 14px' } );
 					allNamespaces.forEach( function( nsItem ) {
 						var isChecked = selectedNs.indexOf( nsItem.id ) !== -1;
 						var $cb = $( '<input>' ).attr( 'type', 'checkbox' ).prop( 'checked', isChecked ).data( 'ns-id', nsItem.id );
@@ -249,87 +229,64 @@
 					} );
 					$nsGroup.append( $nsCheckboxes );
 
-					var $catInput = this.createInputGroup( '分类名称', filters.category || '', '可选', function(v) {
+					var $catInput = this.createInputGroup( mw.msg( 'wikiautomator-step-search-category' ), filters.category || '', mw.msg( 'wikiautomator-step-search-category-placeholder' ), function(v) {
 						var sf = WikiAutomator.steps[index].search_filters || {};
 						sf.category = v;
 						WikiAutomator.updateStep( index, 'search_filters', sf );
 					} );
-					var $prefixInput = this.createInputGroup( '标题前缀', filters.prefix || '', '可选', function(v) {
+					var $prefixInput = this.createInputGroup( mw.msg( 'wikiautomator-step-search-prefix' ), filters.prefix || '', mw.msg( 'wikiautomator-step-search-prefix-placeholder' ), function(v) {
 						var sf = WikiAutomator.steps[index].search_filters || {};
 						sf.prefix = v;
 						WikiAutomator.updateStep( index, 'search_filters', sf );
 					} );
-					var $limitInput = this.createInputGroup( '最大页面数', filters.limit || '', '默认500', function(v) {
+					var $limitInput = this.createInputGroup( mw.msg( 'wikiautomator-step-search-limit' ), filters.limit || '', mw.msg( 'wikiautomator-step-search-limit-placeholder' ), function(v) {
 						var sf = WikiAutomator.steps[index].search_filters || {};
 						sf.limit = v ? parseInt( v, 10 ) : null;
 						WikiAutomator.updateStep( index, 'search_filters', sf );
 					} );
-					$filtersGroup.append( $nsGroup, $catInput, $prefixInput, $limitInput );
-					if ( !useSearchTarget ) $filtersGroup.hide();
-
-					$searchCheck.on( 'change', function() {
-						var checked = $( this ).prop( 'checked' );
-						if ( checked ) {
-							WikiAutomator.updateStep( index, 'target', '__search__' );
-							if ( !WikiAutomator.steps[index].search_filters ) {
-								WikiAutomator.updateStep( index, 'search_filters', { namespaces: [], category: '', prefix: '' } );
-							}
-							$targetGroup.hide();
-							$filtersGroup.show();
-						} else {
-							WikiAutomator.updateStep( index, 'target', '' );
-							$targetGroup.show();
-							$filtersGroup.hide();
-						}
+					// Search term input (for non-replace actions in search mode)
+					var $searchTermInput = this.createInputGroup( mw.msg( 'wikiautomator-step-search-term' ), step.search_term || '', mw.msg( 'wikiautomator-step-search-term-placeholder' ), function(v) {
+						WikiAutomator.updateStep( index, 'search_term', v );
 					} );
-
-					// Only show search toggle for replace/rename action
-					if ( step.action !== 'replace' && step.action !== 'rename' ) {
-						$searchToggle.hide();
-						$filtersGroup.hide();
-					}
+					if ( step.action === 'replace' ) $searchTermInput.hide();
+					$filtersGroup.append( $nsGroup, $catInput, $prefixInput, $limitInput, $searchTermInput );
+					if ( targetType !== 'search' ) $filtersGroup.hide();
 
 					// Action Select
-					var $actionGroup = this.createSelectGroup( '动作类型', step.action, {
-						'append': '追加内容',
-						'prepend': '前置内容',
-						'overwrite': '覆写内容',
-						'replace': '替换文本',
-						'rename': '重命名页面'
+					var $actionGroup = this.createSelectGroup( mw.msg( 'wikiautomator-step-action-type' ), step.action, {
+						'append': mw.msg( 'wikiautomator-step-action-append' ),
+						'prepend': mw.msg( 'wikiautomator-step-action-prepend' ),
+						'overwrite': mw.msg( 'wikiautomator-step-action-overwrite' ),
+						'replace': mw.msg( 'wikiautomator-step-action-replace' )
 					}, function(v) {
 						WikiAutomator.updateStep(index, 'action', v);
-						// Toggle search target visibility
-						if ( v === 'replace' || v === 'rename' ) {
-							$searchToggle.show();
-						} else {
-							$searchToggle.hide();
-							$filtersGroup.hide();
-							if ( WikiAutomator.steps[index].target === '__search__' ) {
-								WikiAutomator.updateStep( index, 'target', '' );
-								$targetGroup.show();
-							}
-						}
-						// Toggle rename options
-						if ( v === 'rename' ) {
-							$renameOptions.show();
-						} else {
-							$renameOptions.hide();
-						}
 						// Toggle move pages option
 						if ( v === 'replace' ) {
 							$movePagesOption.show();
 						} else {
 							$movePagesOption.hide();
 						}
-						// Toggle regex flags
-						var mm = $( 'select[name="wpMatchMode"]' ).val();
-						if ( mm === 'regex' && ( v === 'replace' || v === 'rename' ) ) {
+						// Toggle search term input (hide for replace, show for others in search mode)
+						if ( v === 'replace' ) {
+							$searchTermInput.hide();
+						} else {
+							$searchTermInput.show();
+						}
+						// Toggle regex flags based on step match mode
+						var stepMm = WikiAutomator.steps[index].match_mode || 'literal';
+						if ( stepMm === 'regex' && v === 'replace' ) {
 							$regexFlagsGroup.show();
 						} else {
 							$regexFlagsGroup.hide();
 						}
+						// Toggle match mode select
+						if ( v === 'replace' ) {
+							$matchModeGroup.show();
+						} else {
+							$matchModeGroup.hide();
+						}
 						// Toggle value inputs
-						if ( v === 'replace' || v === 'rename' ) {
+						if ( v === 'replace' ) {
 							$valueGroup.hide();
 							$searchGroup.show();
 							$replaceGroup.show();
@@ -350,18 +307,35 @@
 						}
 					} );
 
-					// Value inputs: split into search+replace for replace/rename, single textarea for others
+					// Match mode select (per step)
+					var $matchModeGroup = this.createSelectGroup( mw.msg( 'wikiautomator-match-mode' ), step.match_mode || 'literal', {
+						'literal': mw.msg( 'wikiautomator-match-mode-literal' ),
+						'wildcard': mw.msg( 'wikiautomator-match-mode-wildcard' ),
+						'regex': mw.msg( 'wikiautomator-match-mode-regex' )
+					}, function(v) {
+						WikiAutomator.updateStep( index, 'match_mode', v );
+						// Toggle regex flags
+						if ( v === 'regex' && WikiAutomator.steps[index].action === 'replace' ) {
+							$regexFlagsGroup.show();
+						} else {
+							$regexFlagsGroup.hide();
+						}
+					} );
+					// Value inputs: split into search+replace for replace, single textarea for others
 					var val = step.value;
-					var isReplaceType = ( step.action === 'replace' || step.action === 'rename' );
+					var isReplaceType = ( step.action === 'replace' );
+
+					// Only show match mode for replace
+					if ( !isReplaceType ) $matchModeGroup.hide();
 
 					// Single value textarea (for append/prepend/overwrite)
 					var singleVal = '';
 					if ( !isReplaceType ) {
 						singleVal = ( typeof val === 'object' && val !== null ) ? '' : ( val || '' );
 					}
-					var $valueGroup = this.createInputGroup( '内容', singleVal, '要写入的内容', function(v) { WikiAutomator.updateStep(index, 'value', v); }, true );
+					var $valueGroup = this.createInputGroup( mw.msg( 'wikiautomator-step-value' ), singleVal, mw.msg( 'wikiautomator-step-value-placeholder' ), function(v) { WikiAutomator.updateStep(index, 'value', v); }, true );
 
-					// Dual inputs (for replace/rename)
+					// Dual inputs (for replace)
 					var searchVal = '';
 					var replaceVal = '';
 					if ( typeof val === 'object' && val !== null ) {
@@ -375,20 +349,20 @@
 							replaceVal = val.substring( pipeIdx + 1 );
 						}
 					}
-					var $searchGroup = this.createInputGroup( '查找内容', searchVal, '要查找的文本或模式', function(v) {
+					var $searchGroup = this.createInputGroup( mw.msg( 'wikiautomator-step-search-value' ), searchVal, mw.msg( 'wikiautomator-step-search-value-placeholder' ), function(v) {
 						var cur = WikiAutomator.steps[index].value;
 						if ( typeof cur !== 'object' || cur === null ) cur = { search: '', replace: '' };
 						cur.search = v;
 						WikiAutomator.updateStep( index, 'value', cur );
 					} );
-					var $replaceGroup = this.createInputGroup( '替换为', replaceVal, '替换后的文本（留空则删除匹配内容）', function(v) {
+					var $replaceGroup = this.createInputGroup( mw.msg( 'wikiautomator-step-replace-value' ), replaceVal, mw.msg( 'wikiautomator-step-replace-value-placeholder' ), function(v) {
 						var cur = WikiAutomator.steps[index].value;
 						if ( typeof cur !== 'object' || cur === null ) cur = { search: '', replace: '' };
 						cur.replace = v;
 						WikiAutomator.updateStep( index, 'value', cur );
 					} );
 
-					// Initialize value as object for replace/rename
+					// Initialize value as object for replace
 					if ( isReplaceType && ( typeof val !== 'object' || val === null ) ) {
 						WikiAutomator.updateStep( index, 'value', { search: searchVal, replace: replaceVal } );
 					}
@@ -407,11 +381,11 @@
 					// Regex flags (shown only when match mode is regex and action is replace)
 					var rFlags = step.regex_flags || {};
 					var $regexFlagsGroup = $( '<div>' ).addClass( 'wa-input-group wa-regex-flags' );
-					$regexFlagsGroup.append( $( '<label>' ).text( '正则标志' ) );
+					$regexFlagsGroup.append( $( '<label>' ).text( mw.msg( 'wikiautomator-step-regex-flags' ) ) );
 					var flagsDef = [
-						{ key: 'i', label: '不区分大小写 (i)' },
-						{ key: 'm', label: '多行模式 (m)' },
-						{ key: 'U', label: '非贪婪模式 (U)' }
+						{ key: 'i', label: mw.msg( 'wikiautomator-regex-flag-i' ) },
+						{ key: 'm', label: mw.msg( 'wikiautomator-regex-flag-m' ) },
+						{ key: 'U', label: mw.msg( 'wikiautomator-regex-flag-U' ) }
 					];
 					var $flagsRow = $( '<div>' ).css( { display: 'flex', gap: '15px', 'flex-wrap': 'wrap' } );
 					flagsDef.forEach( function( f ) {
@@ -426,14 +400,28 @@
 					$regexFlagsGroup.append( $flagsRow );
 
 					// Determine visibility: check match mode select
-					var $matchModeSelect = $( 'select[name="wpMatchMode"]' );
-					var currentMatchMode = $matchModeSelect.length ? $matchModeSelect.val() : '';
-					if ( currentMatchMode !== 'regex' || ( step.action !== 'replace' && step.action !== 'rename' ) ) {
+					var stepMatchMode = step.match_mode || 'literal';
+					if ( stepMatchMode !== 'regex' || step.action !== 'replace' ) {
 						$regexFlagsGroup.hide();
 					}
 
-					// Rename option: create redirect checkbox
-					var $renameOptions = $( '<div>' ).addClass( 'wa-input-group' );
+					// Move pages option: also replace text in page titles
+					var $movePagesOption = $( '<div>' ).addClass( 'wa-input-group' );
+					var $movePagesCheck = $( '<input>' ).attr( 'type', 'checkbox' ).prop( 'checked', !!step.move_pages );
+					$movePagesCheck.on( 'change', function() {
+						WikiAutomator.updateStep( index, 'move_pages', $( this ).prop( 'checked' ) );
+						if ( $( this ).prop( 'checked' ) ) {
+							$redirectOption.show();
+						} else {
+							$redirectOption.hide();
+						}
+					} );
+					$movePagesOption.append(
+						$( '<label>' ).css( 'display', 'inline' ).append( $movePagesCheck, ' ' + mw.msg( 'wikiautomator-step-move-pages' ) )
+					);
+
+					// Create redirect option (shown when move_pages is checked)
+					var $redirectOption = $( '<div>' ).css( 'margin-left', '20px' );
 					var createRedirect = ( step.value && typeof step.value === 'object' ) ? ( step.value.create_redirect !== false ) : true;
 					var $redirectCheck = $( '<input>' ).attr( 'type', 'checkbox' ).prop( 'checked', createRedirect );
 					$redirectCheck.on( 'change', function() {
@@ -443,23 +431,15 @@
 						}
 						WikiAutomator.updateStep( index, 'value', val );
 					} );
-					$renameOptions.append(
-						$( '<label>' ).css( 'display', 'inline' ).append( $redirectCheck, ' 从旧标题创建重定向' )
+					$redirectOption.append(
+						$( '<label>' ).css( { display: 'inline', 'font-weight': 'normal' } ).append( $redirectCheck, ' ' + mw.msg( 'wikiautomator-step-create-redirect' ) )
 					);
-					if ( step.action !== 'rename' ) $renameOptions.hide();
+					if ( !step.move_pages ) $redirectOption.hide();
+					$movePagesOption.append( $redirectOption );
 
-					// Move pages option: also replace text in page titles
-					var $movePagesOption = $( '<div>' ).addClass( 'wa-input-group' );
-					var $movePagesCheck = $( '<input>' ).attr( 'type', 'checkbox' ).prop( 'checked', !!step.move_pages );
-					$movePagesCheck.on( 'change', function() {
-						WikiAutomator.updateStep( index, 'move_pages', $( this ).prop( 'checked' ) );
-					} );
-					$movePagesOption.append(
-						$( '<label>' ).css( 'display', 'inline' ).append( $movePagesCheck, ' 替换页面标题内的文字（当可以时）' )
-					);
 					if ( step.action !== 'replace' ) $movePagesOption.hide();
 
-					$content.append( $targetGroup, $searchToggle, $filtersGroup, $actionGroup, $valueGroup, $searchGroup, $replaceGroup, $regexFlagsGroup, $renameOptions, $movePagesOption );
+					$content.append( $targetTypeGroup, $targetGroup, $searchWarning, $filtersGroup, $actionGroup, $matchModeGroup, $valueGroup, $searchGroup, $replaceGroup, $regexFlagsGroup, $movePagesOption );
 					$row.append( $header, $content );
 					$container.append( $row );
 				}, this );

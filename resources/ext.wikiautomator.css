@@ -84,29 +84,6 @@
 	background-color: rgba(221, 51, 51, 0.1);
 }
 
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-	.wa-step-row {
-		border-color: #72777d;
-	}
-
-	.wa-step-header {
-		background: rgba(255, 255, 255, 0.05);
-		border-color: #72777d;
-	}
-
-	.wa-empty-state {
-		color: #a2a9b1;
-		border-color: #72777d;
-	}
-
-	.wa-input-group .mw-ui-input {
-		background-color: #1e1e1e;
-		color: #e0e0e0;
-		border-color: #72777d;
-	}
-}
-
 /* Support for MediaWiki skin dark mode classes */
 .skin-citizen-dark .wa-step-row,
 .skin-vector-dark .wa-step-row,
@@ -130,10 +107,11 @@
 
 .skin-citizen-dark .wa-input-group .mw-ui-input,
 .skin-vector-dark .wa-input-group .mw-ui-input,
-.client-dark-mode .wa-input-group .mw-ui-input {
-	background-color: #1e1e1e;
-	color: #e0e0e0;
-	border-color: #72777d;
+.client-dark-mode .wa-input-group .mw-ui-input,
+[data-color-mode="dark"] .wa-input-group .mw-ui-input {
+	background-color: #1e1e1e !important;
+	color: #e0e0e0 !important;
+	border-color: #72777d !important;
 }
 
 /* Preview table */
@@ -193,6 +171,27 @@
 	cursor: pointer;
 }
 
+/* Namespace inline layout for HTMLForm multiselect */
+.wa-ns-inline .mw-htmlform-flatlist-item,
+.wa-ns-inline .oo-ui-checkboxMultiselectWidget .oo-ui-widget,
+.wa-ns-inline .mw-htmlform-multiselect-column {
+	display: inline-block !important;
+	margin-right: 12px;
+	white-space: nowrap;
+}
+
+.wa-ns-inline .oo-ui-checkboxMultiselectWidget,
+.wa-ns-inline .mw-htmlform-checkboxes-container {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 14px;
+	max-height: 120px;
+	overflow-y: auto;
+	border: 1px solid #c8ccd1;
+	border-radius: 3px;
+	padding: 6px 8px;
+}
+
 /* Regex flags inline checkboxes */
 .wa-regex-flags label {
 	font-weight: normal !important;
@@ -201,20 +200,6 @@
 
 .wa-regex-flags input[type="checkbox"] {
 	margin-right: 4px;
-}
-
-/* Dark mode for preview and warnings */
-@media (prefers-color-scheme: dark) {
-	.wa-preview-match {
-		background-color: #665d1e;
-		color: #f8f9fa;
-	}
-
-	.wa-warning {
-		background-color: #332b00;
-		border-color: #665d1e;
-		color: #e0d6a8;
-	}
 }
 
 .skin-citizen-dark .wa-preview-match,
@@ -230,4 +215,44 @@
 	background-color: #332b00;
 	border-color: #665d1e;
 	color: #e0d6a8;
+}
+
+/* Diff preview */
+.wa-diff-container {
+	font-family: monospace;
+	font-size: 0.85em;
+	line-height: 1.5;
+	margin-top: 4px;
+	max-height: 300px;
+	overflow-y: auto;
+}
+
+.wa-diff-del {
+	background-color: #feeaea;
+	color: #8b0000;
+	padding: 1px 4px;
+	border-left: 3px solid #d33;
+}
+
+.wa-diff-add {
+	background-color: #e6ffec;
+	color: #006400;
+	padding: 1px 4px;
+	border-left: 3px solid #14866d;
+}
+
+.skin-citizen-dark .wa-diff-del,
+.skin-vector-dark .wa-diff-del,
+.client-dark-mode .wa-diff-del {
+	background-color: #3d1f1f;
+	color: #f8a0a0;
+	border-color: #d33;
+}
+
+.skin-citizen-dark .wa-diff-add,
+.skin-vector-dark .wa-diff-add,
+.client-dark-mode .wa-diff-add {
+	background-color: #1f3d1f;
+	color: #a0f8a0;
+	border-color: #14866d;
 }
