@@ -599,6 +599,8 @@ class AutomationJob extends Job {
 						}
 					} elseif ( $effectiveMode === 'regex' ) {
 						$search = $this->normalizeRegexPattern( $search, $regexFlags );
+						// Interpret escape sequences in replacement string
+						$replace = $this->processEscapeSequences( $replace );
 
 						$newContent = $this->safeRegexReplace( $search, $replace, $content, $logger );
 
@@ -699,7 +701,8 @@ class AutomationJob extends Job {
 									if ( $result !== null ) $newSlotText = $result;
 								} elseif ( $effectiveMode === 'regex' ) {
 									$normalizedSearch = $this->normalizeRegexPattern( $search, $regexFlags );
-									$result = $this->safeRegexReplace( $normalizedSearch, $replace, $slotText, $logger );
+									$slotReplace = $this->processEscapeSequences( $replace );
+									$result = $this->safeRegexReplace( $normalizedSearch, $slotReplace, $slotText, $logger );
 									if ( $result !== null ) $newSlotText = $result;
 								} else {
 									$newSlotText = str_replace( $search, $replace, $slotText );
@@ -761,12 +764,13 @@ class AutomationJob extends Job {
 	 */
 	private function normalizeRegexPattern( $pattern, $regexFlags = [] ) {
 		if ( $pattern[0] !== '/' && $pattern[0] !== '#' && $pattern[0] !== '~' ) {
-			// No delimiter provided: build flags from scratch
+			// No delimiter provided: use # as delimiter to avoid conflicts with / in patterns
 			$flags = 'u';
 			if ( !empty( $regexFlags['i'] ) ) $flags .= 'i';
 			if ( !empty( $regexFlags['m'] ) ) $flags .= 'm';
+			if ( !empty( $regexFlags['s'] ) ) $flags .= 's';
 			if ( !empty( $regexFlags['U'] ) ) $flags .= 'U';
-			$pattern = '/' . str_replace( '/', '\/', $pattern ) . '/' . $flags;
+			$pattern = '#' . str_replace( '#', '\\#', $pattern ) . '#' . $flags;
 		} else {
 			// User provided delimiters: validate flags and ensure 'u' is present
 			$delimiter = $pattern[0];
@@ -785,13 +789,33 @@ class AutomationJob extends Job {
 	}
 
 	/**
+	 * Process escape sequences in replacement strings.
+	 * Converts literal \n, \t, \r to actual newline, tab, carriage return.
+	 * Preserves regex backreferences like $1, $2, \1, \2.
+	 * @param string $str The replacement string
+	 * @return string Processed string with escape sequences resolved
+	 */
+	private function processEscapeSequences( $str ) {
+		// Only convert common whitespace escapes, safe for regex replacement context.
+		// Using strtr for atomic replacement (no double-processing risk).
+		// Does NOT use stripcslashes() to avoid converting \0 (null byte)
+		// and \\ -> \ which would break regex backreferences like \1.
+		return strtr( $str, [
+			'\\n' => "\n",
+			'\\t' => "\t",
+			'\\r' => "\r",
+		] );
+	}
+
+	/**
 	 * Expand wildcards to regex patterns for MediaWiki syntax
 	 * @param string $pattern The pattern with wildcards
 	 * @return string Regex pattern
 	 */
 	private function expandWildcards( $pattern ) {
 		// Escape regex special characters except *
-		$escaped = preg_quote( $pattern, '/' );
+		// Use '#' as delimiter to match normalizeRegexPattern convention
+		$escaped = preg_quote( $pattern, '#' );
 		// Restore * and convert to regex
 		$escaped = str_replace( '\\*', '<<<WILDCARD>>>', $escaped );
 
@@ -806,7 +830,7 @@ class AutomationJob extends Job {
 		// Generic * becomes non-greedy match
 		$escaped = str_replace( '<<<WILDCARD>>>', '.*?', $escaped );
 
-		return '/' . $escaped . '/su';
+		return '#' . $escaped . '#su';
 	}
 
 	/**

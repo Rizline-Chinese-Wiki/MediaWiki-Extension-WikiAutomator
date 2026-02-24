@@ -29,6 +29,11 @@
 	margin-bottom: 5px;
 }
 
+.wa-input-group textarea.mw-ui-input {
+	resize: vertical;
+	min-height: 60px;
+}
+
 .wa-empty-state {
 	padding: 20px;
 	text-align: center;

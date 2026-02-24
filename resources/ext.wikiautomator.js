@@ -354,13 +354,13 @@
 						if ( typeof cur !== 'object' || cur === null ) cur = { search: '', replace: '' };
 						cur.search = v;
 						WikiAutomator.updateStep( index, 'value', cur );
-					} );
+					}, true );
 					var $replaceGroup = this.createInputGroup( mw.msg( 'wikiautomator-step-replace-value' ), replaceVal, mw.msg( 'wikiautomator-step-replace-value-placeholder' ), function(v) {
 						var cur = WikiAutomator.steps[index].value;
 						if ( typeof cur !== 'object' || cur === null ) cur = { search: '', replace: '' };
 						cur.replace = v;
 						WikiAutomator.updateStep( index, 'value', cur );
-					} );
+					}, true );
 
 					// Initialize value as object for replace
 					if ( isReplaceType && ( typeof val !== 'object' || val === null ) ) {
@@ -385,6 +385,7 @@
 					var flagsDef = [
 						{ key: 'i', label: mw.msg( 'wikiautomator-regex-flag-i' ) },
 						{ key: 'm', label: mw.msg( 'wikiautomator-regex-flag-m' ) },
+						{ key: 's', label: mw.msg( 'wikiautomator-regex-flag-s' ) },
 						{ key: 'U', label: mw.msg( 'wikiautomator-regex-flag-U' ) }
 					];
 					var $flagsRow = $( '<div>' ).css( { display: 'flex', gap: '15px', 'flex-wrap': 'wrap' } );

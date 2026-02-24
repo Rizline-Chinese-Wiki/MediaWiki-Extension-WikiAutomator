@@ -1452,8 +1452,9 @@ class SpecialWikiAutomator extends SpecialPage {
 				$flags = 'u';
 				if ( !empty( $regexFlags['i'] ) ) $flags .= 'i';
 				if ( !empty( $regexFlags['m'] ) ) $flags .= 'm';
+				if ( !empty( $regexFlags['s'] ) ) $flags .= 's';
 				if ( !empty( $regexFlags['U'] ) ) $flags .= 'U';
-				$pattern = '/' . str_replace( '/', '\/', $pattern ) . '/' . $flags;
+				$pattern = '#' . str_replace( '#', '\#', $pattern ) . '#' . $flags;
 			}
 		} else {
 			$pattern = '/' . preg_quote( $search, '/' ) . '/u';
@@ -1516,8 +1517,9 @@ class SpecialWikiAutomator extends SpecialPage {
 				$flags = 'u';
 				if ( !empty( $regexFlags['i'] ) ) $flags .= 'i';
 				if ( !empty( $regexFlags['m'] ) ) $flags .= 'm';
+				if ( !empty( $regexFlags['s'] ) ) $flags .= 's';
 				if ( !empty( $regexFlags['U'] ) ) $flags .= 'U';
-				$pattern = '/' . str_replace( '/', '\/', $pattern ) . '/' . $flags;
+				$pattern = '#' . str_replace( '#', '\#', $pattern ) . '#' . $flags;
 			}
 			$result = @preg_replace( $pattern, $replace, $content );
 			if ( $result !== null ) $newContent = $result;
