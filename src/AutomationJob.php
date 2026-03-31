@@ -656,7 +656,7 @@ class AutomationJob extends Job {
 				}
 
 				// Set edit flags
-				$flags = 0;
+				$flags = EDIT_MINOR;
 				if ( !$targetTitle->exists() ) {
 					$flags |= EDIT_NEW;
 				} else {
